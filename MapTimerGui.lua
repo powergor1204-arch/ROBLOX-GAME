@@ -3,61 +3,76 @@
 
 local Players = game:GetService("Players")
 local TIMER_DURATION = 10 -- seconds
-local MAP_FOLDER = game.Workspace:FindFirstChild("Maps") -- Make sure this folder exists!
+local MAP_FOLDER = game.Workspace:FindFirstChild("Maps")
+local currentMap = nil
 
--- Function to teleport players to a random map
-local function teleportPlayersToMap(map)
-	if not map then return end
-	
-	-- Find spawn location in the map
-	local spawnLocation = map:FindFirstChild("SpawnLocation") or map:FindFirstChildOfClass("SpawnLocation")
-	
-	if spawnLocation then
-		for _, player in pairs(Players:GetPlayers()) do
-			if player.Character then
-				player.Character:MoveTo(spawnLocation.Position + Vector3.new(0, 3, 0))
-			end
-		end
-	else
-		-- If no spawn, just put them at map position
-		for _, player in pairs(Players:GetPlayers()) do
-			if player.Character then
-				player.Character:MoveTo(map.Position + Vector3.new(0, 5, 0))
-			end
-		end
-	end
-end
-
--- Function to switch to random map
-local function switchRandomMap()
+-- Function to get a random map
+local function getRandomMap()
 	if not MAP_FOLDER then
 		warn("Maps folder not found in Workspace!")
-		return
+		return nil
 	end
 	
 	local maps = MAP_FOLDER:GetChildren()
 	
 	if #maps == 0 then
 		warn("No maps found in Maps folder!")
-		return
+		return nil
 	end
 	
-	local randomMap = maps[math.random(1, #maps)]
-	print("Switching to map: " .. randomMap.Name)
+	return maps[math.random(1, #maps)]
+end
+
+-- Function to spawn player at map
+local function spawnPlayerAtMap(player, map)
+	if not player or not player.Character or not map then return end
 	
-	-- Teleport all players to the new map
-	teleportPlayersToMap(randomMap)
+	-- Try to find SpawnLocation in the map
+	local spawnPart = map:FindFirstChild("SpawnLocation")
+	
+	if spawnPart and spawnPart:IsA("BasePart") then
+		-- Spawn 3 studs above the SpawnLocation
+		player.Character:MoveTo(spawnPart.Position + Vector3.new(0, 3, 0))
+		print("Spawned " .. player.Name .. " at " .. map.Name)
+	else
+		-- If no SpawnLocation, find any part in the map
+		local firstPart = map:FindFirstChildOfClass("Part") or map:FindFirstChildOfClass("MeshPart")
+		if firstPart then
+			player.Character:MoveTo(firstPart.Position + Vector3.new(0, 5, 0))
+			print("Spawned " .. player.Name .. " at part in " .. map.Name)
+		else
+			warn("No spawn point found in " .. map.Name)
+		end
+	end
+end
+
+-- Function to teleport all players to a random map
+local function switchRandomMap()
+	local map = getRandomMap()
+	if not map then return end
+	
+	currentMap = map
+	print("Switching to map: " .. map.Name)
+	
+	-- Teleport all players
+	for _, player in pairs(Players:GetPlayers()) do
+		if player.Character then
+			wait(0.1)
+			spawnPlayerAtMap(player, map)
+		end
+	end
 end
 
 -- Function to create and display timer GUI
 local function createTimerGui(player)
-	if not player.Character then return end
+	if not player:FindFirstChild("PlayerGui") then return end
 	
-	local playerGui = player:WaitForChild("PlayerGui")
+	local playerGui = player.PlayerGui
 	
-	-- Check if GUI already exists
-	if playerGui:FindFirstChild("MapTimerGui") then
-		playerGui:FindFirstChild("MapTimerGui"):Destroy()
+	-- Remove old GUI if it exists
+	local oldGui = playerGui:FindFirstChild("MapTimerGui")
+	if oldGui then
+		oldGui:Destroy()
 	end
 	
 	local screenGui = Instance.new("ScreenGui")
@@ -92,17 +107,44 @@ local function createTimerGui(player)
 	return timerLabel
 end
 
+-- When a player joins, create their GUI and spawn them
+Players.PlayerAdded:Connect(function(player)
+	player.CharacterAdded:Connect(function(character)
+		wait(1) -- Wait for character to fully load
+		
+		-- Create GUI
+		createTimerGui(player)
+		
+		-- Spawn at current map or a random one if no map set yet
+		local mapToSpawn = currentMap or getRandomMap()
+		if mapToSpawn then
+			spawnPlayerAtMap(player, mapToSpawn)
+		end
+	end)
+end)
+
+-- Spawn existing players
+for _, player in pairs(Players:GetPlayers()) do
+	if player.Character then
+		createTimerGui(player)
+		local mapToSpawn = currentMap or getRandomMap()
+		if mapToSpawn then
+			spawnPlayerAtMap(player, mapToSpawn)
+		end
+	end
+end
+
 -- Main timer loop
 local function startTimer()
 	while true do
 		local timeRemaining = TIMER_DURATION
 		
+		-- Countdown loop
 		while timeRemaining > 0 do
 			-- Update all players' timers
 			for _, player in pairs(Players:GetPlayers()) do
-				local playerGui = player:FindFirstChild("PlayerGui")
-				if playerGui then
-					local gui = playerGui:FindFirstChild("MapTimerGui")
+				if player:FindFirstChild("PlayerGui") then
+					local gui = player.PlayerGui:FindFirstChild("MapTimerGui")
 					if gui then
 						local label = gui:FindFirstChild("TimerLabel")
 						if label then
@@ -116,11 +158,10 @@ local function startTimer()
 			timeRemaining = timeRemaining - 1
 		end
 		
-		-- Update all timers to 0
+		-- Timer reached 0
 		for _, player in pairs(Players:GetPlayers()) do
-			local playerGui = player:FindFirstChild("PlayerGui")
-			if playerGui then
-				local gui = playerGui:FindFirstChild("MapTimerGui")
+			if player:FindFirstChild("PlayerGui") then
+				local gui = player.PlayerGui:FindFirstChild("MapTimerGui")
 				if gui then
 					local label = gui:FindFirstChild("TimerLabel")
 					if label then
@@ -132,27 +173,12 @@ local function startTimer()
 		
 		wait(0.5)
 		
-		-- Switch map
+		-- Switch to random map and spawn players
 		switchRandomMap()
 		
 		wait(1)
 	end
 end
 
--- When a player joins, create their GUI
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(character)
-		wait(0.5) -- Wait for character to load
-		createTimerGui(player)
-	end)
-end)
-
--- Create GUI for players already in game
-for _, player in pairs(Players:GetPlayers()) do
-	if player.Character then
-		createTimerGui(player)
-	end
-end
-
--- Start the main timer loop
+-- Start the timer
 startTimer()
