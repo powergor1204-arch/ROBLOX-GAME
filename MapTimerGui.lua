@@ -5,8 +5,9 @@ local Players = game:GetService("Players")
 local TIMER_DURATION = 10 -- seconds
 local MAP_FOLDER = game.Workspace:FindFirstChild("Maps")
 local currentMap = nil
+local lastMap = nil
 
--- Function to get a random map
+-- Function to get a random map (never the same twice in a row)
 local function getRandomMap()
 	if not MAP_FOLDER then
 		warn("Maps folder not found in Workspace!")
@@ -20,7 +21,17 @@ local function getRandomMap()
 		return nil
 	end
 	
-	return maps[math.random(1, #maps)]
+	if #maps == 1 then
+		return maps[1]
+	end
+	
+	-- Keep picking until we get a different map than the last one
+	local randomMap
+	repeat
+		randomMap = maps[math.random(1, #maps)]
+	until randomMap ~= lastMap
+	
+	return randomMap
 end
 
 -- Function to spawn player at map
@@ -51,6 +62,7 @@ local function switchRandomMap()
 	local map = getRandomMap()
 	if not map then return end
 	
+	lastMap = currentMap -- Store the old map
 	currentMap = map
 	print("Switching to map: " .. map.Name)
 	
